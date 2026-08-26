@@ -5,7 +5,8 @@ import json
 import hashlib
 import zipfile
 import requests
-from datetime import datetime
+
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
@@ -22,12 +23,15 @@ POSTED_FILE = "posted_ids.json"
 
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 
-OE_URL = "https://oeffentlichevergabe.de/api/notice-exports"
+OE_EXPORT_URL = (
+    "https://oeffentlichevergabe.de/api/notice-exports"
+)
 
 
-# CPV:
+# CPV-Hauptbereiche
+#
 # 45 = Bauarbeiten
-# 48 = Software / Informationssysteme
+# 48 = Softwarepakete / Informationssysteme
 # 72 = IT-Dienstleistungen
 
 BAU_PREFIXES = ("45",)
@@ -35,10 +39,11 @@ IT_PREFIXES = ("48", "72")
 
 
 # ============================================================
-# ALLGEMEINE HILFSFUNKTIONEN
+# HILFSFUNKTIONEN
 # ============================================================
 
 def clean_text(value):
+
     if value is None:
         return ""
 
@@ -46,28 +51,55 @@ def clean_text(value):
         return value.strip()
 
     if isinstance(value, list):
+
         for item in value:
+
             text = clean_text(item)
+
             if text:
                 return text
+
         return ""
 
     if isinstance(value, dict):
 
-        for key in ["deu", "de", "DE"]:
+        # Deutsch bevorzugen
+        for key in [
+            "deu",
+            "de",
+            "DE"
+        ]:
+
             if key in value:
-                text = clean_text(value[key])
+
+                text = clean_text(
+                    value[key]
+                )
+
                 if text:
                     return text
 
-        for key in ["eng", "en", "EN"]:
+        # Danach Englisch
+        for key in [
+            "eng",
+            "en",
+            "EN"
+        ]:
+
             if key in value:
-                text = clean_text(value[key])
+
+                text = clean_text(
+                    value[key]
+                )
+
                 if text:
                     return text
 
+        # Sonst erster brauchbarer Wert
         for item in value.values():
+
             text = clean_text(item)
+
             if text:
                 return text
 
@@ -75,6 +107,7 @@ def clean_text(value):
 
 
 def extract_cpv_codes(value):
+
     codes = set()
 
     if value is None:
@@ -82,21 +115,37 @@ def extract_cpv_codes(value):
 
     if isinstance(value, dict):
 
-        # Häufig steht der CPV-Code direkt unter "id"
+        # Häufig steht ein CPV-Code direkt unter id
         if "id" in value:
-            candidate = str(value["id"])
-            match = re.search(r"(\d{8})", candidate)
+
+            candidate = str(
+                value["id"]
+            )
+
+            match = re.search(
+                r"(\d{8})",
+                candidate
+            )
 
             if match:
-                codes.add(match.group(1))
+
+                codes.add(
+                    match.group(1)
+                )
 
         for item in value.values():
-            codes.update(extract_cpv_codes(item))
+
+            codes.update(
+                extract_cpv_codes(item)
+            )
 
     elif isinstance(value, list):
 
         for item in value:
-            codes.update(extract_cpv_codes(item))
+
+            codes.update(
+                extract_cpv_codes(item)
+            )
 
     else:
 
@@ -113,28 +162,33 @@ def extract_cpv_codes(value):
 def classify_cpv(codes):
 
     has_bau = any(
-        code.startswith(BAU_PREFIXES)
+        code.startswith(
+            BAU_PREFIXES
+        )
         for code in codes
     )
 
     has_it = any(
-        code.startswith(IT_PREFIXES)
+        code.startswith(
+            IT_PREFIXES
+        )
         for code in codes
     )
 
-    # Wir posten nur eindeutige Treffer.
     if has_bau and not has_it:
         return "bau"
 
     if has_it and not has_bau:
         return "it"
 
+    # Bei unklarer Zuordnung lieber
+    # nichts posten als falsch posten.
     return None
 
 
 def normalize(text):
 
-    text = text.lower()
+    text = clean_text(text).lower()
 
     text = re.sub(
         r"[^a-zäöüß0-9]+",
@@ -147,7 +201,10 @@ def normalize(text):
     )
 
 
-def create_fingerprint(title, buyer):
+def create_fingerprint(
+    title,
+    buyer
+):
 
     raw = (
         normalize(title)
@@ -160,12 +217,15 @@ def create_fingerprint(title, buyer):
     ).hexdigest()
 
 
-def send_telegram(chat_id, message):
+def send_telegram(
+    chat_id,
+    message
+):
 
     if not chat_id:
         return False
 
-    url = (
+    telegram_url = (
         f"https://api.telegram.org/"
         f"bot{BOT_TOKEN}/sendMessage"
     )
@@ -173,7 +233,7 @@ def send_telegram(chat_id, message):
     try:
 
         response = requests.post(
-            url,
+            telegram_url,
             data={
                 "chat_id": chat_id,
                 "text": message,
@@ -187,13 +247,15 @@ def send_telegram(chat_id, message):
         if result.get("ok") is True:
             return True
 
-        print("Telegram Fehler:")
-        print(result)
+        print(
+            "Telegram Fehler:",
+            result
+        )
 
     except Exception as error:
 
         print(
-            "Telegram-Verbindungsfehler:",
+            "Telegram Verbindungsfehler:",
             error
         )
 
@@ -212,12 +274,19 @@ try:
         encoding="utf-8"
     ) as file:
 
-        saved = json.load(file)
+        saved_data = json.load(file)
 
-        if isinstance(saved, list):
-            posted_ids = set(saved)
+        if isinstance(
+            saved_data,
+            list
+        ):
+
+            posted_ids = set(
+                saved_data
+            )
 
         else:
+
             posted_ids = set()
 
 except (
@@ -232,18 +301,27 @@ new_posted_ids = set()
 
 
 # ============================================================
-# HEUTIGES DATUM
+# DATUM
 # ============================================================
 
 berlin_now = datetime.now(
     ZoneInfo("Europe/Berlin")
 )
 
+# TED: heute
 today_ted = berlin_now.strftime(
     "%Y%m%d"
 )
 
-today_oe = berlin_now.strftime(
+# ÖffentlicheVergabe:
+# Tagesexport ist erst nach Abschluss
+# eines Tages abrufbar.
+yesterday = (
+    berlin_now
+    - timedelta(days=1)
+)
+
+oe_day = yesterday.strftime(
     "%Y-%m-%d"
 )
 
@@ -266,11 +344,19 @@ def process_notice(
     buyer = clean_text(buyer)
     number = clean_text(number)
 
+    if not number:
+        return
+
     if not title:
-        title = "Titel nicht angegeben"
+        title = (
+            "Titel nicht angegeben"
+        )
 
     if not buyer:
-        buyer = "Auftraggeber nicht angegeben"
+        buyer = (
+            "Auftraggeber nicht angegeben"
+        )
+
 
     category = classify_cpv(
         cpv_codes
@@ -279,8 +365,9 @@ def process_notice(
     if category is None:
         return
 
+
     # --------------------------------------------------------
-    # QUELLENÜBERGREIFENDE DUPLIKAT-ERKENNUNG
+    # DUPLIKAT-ERKENNUNG
     # --------------------------------------------------------
 
     fingerprint = create_fingerprint(
@@ -289,7 +376,8 @@ def process_notice(
     )
 
     fingerprint_key = (
-        "FP:" + fingerprint
+        "FP:"
+        + fingerprint
     )
 
     source_key = (
@@ -298,14 +386,23 @@ def process_notice(
         + number
     )
 
+
     if (
         fingerprint_key in posted_ids
-        or fingerprint_key in new_posted_ids
-        or source_key in posted_ids
-        or source_key in new_posted_ids
+        or
+        fingerprint_key in new_posted_ids
+        or
+        source_key in posted_ids
+        or
+        source_key in new_posted_ids
     ):
+
         return
 
+
+    # --------------------------------------------------------
+    # KANAL AUSWÄHLEN
+    # --------------------------------------------------------
 
     if category == "bau":
 
@@ -315,7 +412,7 @@ def process_notice(
             "🏗 Bau & Infrastruktur"
         )
 
-    else:
+    elif category == "it":
 
         chat_id = IT_CHAT
 
@@ -323,14 +420,25 @@ def process_notice(
             "💻 IT, Software & Digitalisierung"
         )
 
+    else:
+
+        return
+
 
     cpv_display = ", ".join(
         sorted(cpv_codes)
     )
 
     if not cpv_display:
-        cpv_display = "Keine Angabe"
 
+        cpv_display = (
+            "Keine Angabe"
+        )
+
+
+    # --------------------------------------------------------
+    # TELEGRAM-NACHRICHT
+    # --------------------------------------------------------
 
     message = (
         "🚨 NEUE AUSSCHREIBUNG\n\n"
@@ -345,7 +453,8 @@ def process_notice(
         f"📅 Veröffentlicht: "
         f"{publication_date}\n\n"
 
-        f"🏷 CPV: {cpv_display}\n"
+        f"🏷 CPV: "
+        f"{cpv_display}\n"
 
         f"🔢 Nummer: "
         f"{number}\n\n"
@@ -375,9 +484,10 @@ def process_notice(
         )
 
         print(
-            f"✅ {source} / "
-            f"{category.upper()} "
-            f"gepostet: {number}"
+            "✅ Gepostet:",
+            source,
+            category,
+            number
         )
 
 
@@ -387,7 +497,19 @@ def process_notice(
 
 def fetch_ted():
 
-    print("TED wird geprüft...")
+    print(
+        "--------------------------------"
+    )
+
+    print(
+        "TED wird geprüft."
+    )
+
+    print(
+        "Datum:",
+        today_ted
+    )
+
 
     payload = {
 
@@ -397,10 +519,12 @@ def fetch_ted():
             f"{today_ted}",
 
         "fields": [
+
             "publication-number",
             "notice-title",
             "buyer-name",
             "publication-date",
+
             "main-classification-proc",
             "main-classification-lot",
             "classification-cpv"
@@ -430,6 +554,7 @@ def fetch_ted():
         []
     )
 
+
     print(
         "TED Treffer:",
         len(notices)
@@ -444,11 +569,16 @@ def fetch_ted():
             )
         )
 
+        if not number:
+            continue
+
+
         title = clean_text(
             notice.get(
                 "notice-title"
             )
         )
+
 
         buyer = clean_text(
             notice.get(
@@ -456,14 +586,18 @@ def fetch_ted():
             )
         )
 
-        publication_date = clean_text(
-            notice.get(
-                "publication-date"
+
+        publication_date = (
+            clean_text(
+                notice.get(
+                    "publication-date"
+                )
             )
         )
 
 
         cpv_codes = set()
+
 
         cpv_codes.update(
             extract_cpv_codes(
@@ -473,6 +607,7 @@ def fetch_ted():
             )
         )
 
+
         cpv_codes.update(
             extract_cpv_codes(
                 notice.get(
@@ -480,6 +615,7 @@ def fetch_ted():
                 )
             )
         )
+
 
         cpv_codes.update(
             extract_cpv_codes(
@@ -498,25 +634,31 @@ def fetch_ted():
 
 
         process_notice(
+
             title=title,
+
             buyer=buyer,
+
             number=number,
-            publication_date=publication_date,
+
+            publication_date=
+                publication_date,
+
             cpv_codes=cpv_codes,
+
             link=link,
+
             source="TED"
         )
 
 
 # ============================================================
-# QUELLE 2: ÖFFENTLICHEVERGABE.DE
+# OCDS: AUFTRAGGEBER FINDEN
 # ============================================================
 
-def find_buyer_from_ocds(
+def get_oe_buyer(
     release
 ):
-
-    buyer_name = ""
 
     buyer = release.get(
         "buyer",
@@ -529,19 +671,22 @@ def find_buyer_from_ocds(
     ):
 
         buyer_name = clean_text(
-            buyer.get("name")
+            buyer.get(
+                "name"
+            )
         )
 
-    if buyer_name:
-        return buyer_name
+        if buyer_name:
+            return buyer_name
 
 
-    # Fallback über OCDS-Parties
+    # Fallback über parties
 
     parties = release.get(
         "parties",
         []
     )
+
 
     for party in parties:
 
@@ -552,89 +697,130 @@ def find_buyer_from_ocds(
 
         if "buyer" in roles:
 
-            name = clean_text(
-                party.get("name")
+            buyer_name = clean_text(
+                party.get(
+                    "name"
+                )
             )
 
-            if name:
-                return name
+            if buyer_name:
+                return buyer_name
+
 
     return ""
 
 
-def find_cpv_from_ocds(
+# ============================================================
+# OCDS: CPV AUS ITEMS LESEN
+# ============================================================
+
+def get_oe_cpv_codes(
     tender
 ):
 
     codes = set()
 
-    classification = tender.get(
-        "classification"
-    )
 
-    codes.update(
-        extract_cpv_codes(
-            classification
-        )
-    )
+    # Wichtig:
+    # OCDS speichert CPV typischerweise
+    # in tender.items[].classification
 
-    additional = tender.get(
-        "additionalClassifications",
+    items = tender.get(
+        "items",
         []
     )
 
-    codes.update(
-        extract_cpv_codes(
-            additional
-        )
-    )
 
+    for item in items:
 
-    # Lose ebenfalls berücksichtigen
-
-    lots = tender.get(
-        "lots",
-        []
-    )
-
-    for lot in lots:
-
-        codes.update(
-            extract_cpv_codes(
-                lot.get(
-                    "classification"
-                )
-            )
+        classification = item.get(
+            "classification",
+            {}
         )
 
         codes.update(
             extract_cpv_codes(
-                lot.get(
-                    "additionalClassifications",
-                    []
-                )
+                classification
             )
         )
+
+
+        additional = item.get(
+            "additionalClassifications",
+            []
+        )
+
+        codes.update(
+            extract_cpv_codes(
+                additional
+            )
+        )
+
+
+    # Zusätzlicher Fallback
+
+    codes.update(
+        extract_cpv_codes(
+            tender.get(
+                "classification"
+            )
+        )
+    )
+
+
+    codes.update(
+        extract_cpv_codes(
+            tender.get(
+                "additionalClassifications",
+                []
+            )
+        )
+    )
+
 
     return codes
 
 
+# ============================================================
+# QUELLE 2:
+# ÖFFENTLICHEVERGABE.DE
+# ============================================================
+
 def fetch_oeffentliche_vergabe():
 
     print(
+        "--------------------------------"
+    )
+
+    print(
         "ÖffentlicheVergabe.de "
-        "wird geprüft..."
+        "wird geprüft."
+    )
+
+    print(
+        "Abgeschlossener Tag:",
+        oe_day
     )
 
 
     response = requests.get(
-        OE_URL,
+
+        OE_EXPORT_URL,
+
         params={
-            "pubDay": today_oe,
+            "pubDay": oe_day,
             "format": "ocds.zip"
         },
+
         timeout=120
     )
+
+
+    print(
+        "HTTP Status:",
+        response.status_code
+    )
+
 
     response.raise_for_status()
 
@@ -646,20 +832,25 @@ def fetch_oeffentliche_vergabe():
     )
 
 
-    files = archive.namelist()
+    filenames = archive.namelist()
+
 
     print(
-        "ÖffentlicheVergabe "
-        "Dateien:",
-        len(files)
+        "Dateien im "
+        "ÖffentlicheVergabe Export:",
+        len(filenames)
     )
 
 
-    for filename in files:
+    processed_releases = 0
+
+
+    for filename in filenames:
 
         if not filename.lower().endswith(
             ".json"
         ):
+
             continue
 
 
@@ -675,10 +866,11 @@ def fetch_oeffentliche_vergabe():
                 )
             )
 
+
         except Exception as error:
 
             print(
-                "Datei konnte nicht "
+                "JSON konnte nicht "
                 "gelesen werden:",
                 filename,
                 error
@@ -695,10 +887,47 @@ def fetch_oeffentliche_vergabe():
 
         for release in releases:
 
+            processed_releases += 1
+
+
+            # ----------------------------------------------
+            # Nur echte Ausschreibungen berücksichtigen
+            # ----------------------------------------------
+
+            tags = release.get(
+                "tag",
+                []
+            )
+
+
+            if (
+                isinstance(
+                    tags,
+                    list
+                )
+                and
+                "tender" not in tags
+            ):
+
+                # Award-/Result-/Planning-
+                # Bekanntmachungen nicht als
+                # neue Opportunity posten.
+                continue
+
+
             tender = release.get(
                 "tender",
                 {}
             )
+
+
+            if not isinstance(
+                tender,
+                dict
+            ):
+
+                continue
+
 
             title = clean_text(
                 tender.get(
@@ -707,18 +936,17 @@ def fetch_oeffentliche_vergabe():
             )
 
 
-            buyer = find_buyer_from_ocds(
+            buyer = get_oe_buyer(
                 release
             )
 
-
-            # OCDS-ID als eindeutige Nummer
 
             number = clean_text(
                 release.get(
                     "id"
                 )
             )
+
 
             if not number:
 
@@ -729,42 +957,58 @@ def fetch_oeffentliche_vergabe():
                 )
 
 
-            publication_date = clean_text(
-                release.get(
-                    "date"
+            publication_date = (
+                clean_text(
+                    release.get(
+                        "date"
+                    )
                 )
             )
 
 
             cpv_codes = (
-                find_cpv_from_ocds(
+                get_oe_cpv_codes(
                     tender
                 )
             )
 
 
-            # noticeId aus dem Dateinamen
-            notice_id = (
+            # ----------------------------------------------
+            # NOTICE-ID AUS DATEINAMEN ERMITTELN
+            # ----------------------------------------------
+
+            filename_only = (
                 filename
                 .split("/")[-1]
-                .split(".json")[0]
             )
 
-            # Bei Versionssuffix versuchen,
-            # den UUID-Teil zu verwenden.
+
             uuid_match = re.search(
+
                 r"([0-9a-fA-F]{8}-"
                 r"[0-9a-fA-F]{4}-"
                 r"[0-9a-fA-F]{4}-"
                 r"[0-9a-fA-F]{4}-"
                 r"[0-9a-fA-F]{12})",
-                notice_id
+
+                filename_only
             )
+
 
             if uuid_match:
 
                 notice_id = (
                     uuid_match.group(1)
+                )
+
+            else:
+
+                notice_id = (
+                    filename_only
+                    .replace(
+                        ".json",
+                        ""
+                    )
                 )
 
 
@@ -778,18 +1022,34 @@ def fetch_oeffentliche_vergabe():
 
 
             process_notice(
+
                 title=title,
+
                 buyer=buyer,
+
                 number=number,
-                publication_date=publication_date,
-                cpv_codes=cpv_codes,
+
+                publication_date=
+                    publication_date,
+
+                cpv_codes=
+                    cpv_codes,
+
                 link=link,
-                source="ÖffentlicheVergabe.de"
+
+                source=
+                    "ÖffentlicheVergabe.de"
             )
 
 
+    print(
+        "OCDS Releases verarbeitet:",
+        processed_releases
+    )
+
+
 # ============================================================
-# BEIDE QUELLEN AUSFÜHREN
+# QUELLEN STARTEN
 # ============================================================
 
 try:
@@ -798,14 +1058,14 @@ try:
 
 except Exception as error:
 
-    # Wichtig:
-    # Wenn TED ausfällt, soll Quelle 2
-    # trotzdem funktionieren.
+    # TED-Ausfall darf den
+    # zweiten Dienst nicht stoppen.
 
     print(
-        "❌ TED Fehler:",
-        error
+        "❌ TED Fehler:"
     )
+
+    print(error)
 
 
 try:
@@ -814,15 +1074,14 @@ try:
 
 except Exception as error:
 
-    # Auch umgekehrt:
-    # TED läuft weiter, wenn diese
-    # Quelle einmal Probleme hat.
+    # Auch ÖffentlicheVergabe darf
+    # TED nicht stoppen.
 
     print(
-        "❌ ÖffentlicheVergabe "
-        "Fehler:",
-        error
+        "❌ ÖffentlicheVergabe Fehler:"
     )
+
+    print(error)
 
 
 # ============================================================
@@ -841,18 +1100,28 @@ with open(
 ) as file:
 
     json.dump(
-        sorted(posted_ids),
+
+        sorted(
+            posted_ids
+        ),
+
         file,
+
         ensure_ascii=False,
+
         indent=2
     )
 
+
+print(
+    "--------------------------------"
+)
 
 print(
     "✅ Lauf abgeschlossen."
 )
 
 print(
-    "Neue Einträge gespeichert:",
+    "Neue Gedächtnis-Einträge:",
     len(new_posted_ids)
 )
