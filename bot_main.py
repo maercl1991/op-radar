@@ -48,7 +48,6 @@ def clean(value):
     return str(value)
 
 
-# Bereits veröffentlichte Ausschreibungen laden
 try:
     with open(POSTED_FILE, "r", encoding="utf-8") as file:
         posted_ids = set(json.load(file))
@@ -56,8 +55,7 @@ except (FileNotFoundError, json.JSONDecodeError):
     posted_ids = set()
 
 
-# Heutiges Datum
-today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
 payload = {
@@ -97,7 +95,6 @@ for notice in notices:
     number = clean(notice.get("publication-number"))
     date = clean(notice.get("publication-date"))
 
-    # Schon gepostet?
     if not number or number in posted_ids:
         continue
 
@@ -111,7 +108,6 @@ for notice in notices:
     elif any(keyword in searchable_text for keyword in IT_KEYWORDS):
         chat = IT_CHAT
 
-    # Gehört zu keiner unserer beiden Nischen
     if chat is None:
         continue
 
@@ -136,8 +132,6 @@ for notice in notices:
 
     telegram_data = telegram_response.json()
 
-    # Nur als "gepostet" speichern, wenn Telegram
-    # die Nachricht tatsächlich angenommen hat.
     if telegram_data.get("ok") is True:
         new_posted_ids.add(number)
         print(f"Erfolgreich gepostet: {number}")
@@ -145,7 +139,6 @@ for notice in notices:
         print(f"Telegram-Fehler bei {number}: {telegram_data}")
 
 
-# Neue IDs zum Gedächtnis hinzufügen
 posted_ids.update(new_posted_ids)
 
 with open(POSTED_FILE, "w", encoding="utf-8") as file:
