@@ -23,35 +23,53 @@ response = requests.post(ted_url, json=payload, timeout=30)
 response.raise_for_status()
 
 data = response.json()
-
 notices = data.get("notices", [])
-
-if not notices:
-    message = "🔎 Opportunity Radar: Aktuell wurden keine passenden Ausschreibungen gefunden."
-else:
-    message = "🚨 Neue Ausschreibungen gefunden:\n\n"
-
-    for notice in notices:
-        publication_number = notice.get("publication-number", "Keine Nummer")
-        title = notice.get("notice-title", "Kein Titel")
-        buyer = notice.get("buyer-name", "Unbekannter Auftraggeber")
-
-        message += (
-            f"📌 {title}\n"
-            f"🏢 {buyer}\n"
-            f"🔢 {publication_number}\n"
-            f"🔗 https://ted.europa.eu/de/notice/-/detail/{publication_number}\n\n"
-        )
 
 telegram_url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-telegram_response = requests.post(
-    telegram_url,
-    data={
-        "chat_id": chat_id,
-        "text": message
-    },
-    timeout=30
-)
+if not notices:
+    requests.post(
+        telegram_url,
+        data={
+            "chat_id": chat_id,
+            "text": "🔎 Opportunity Radar: Aktuell wurden keine passenden Ausschreibungen gefunden."
+        },
+        timeout=30
+    )
 
-print(telegram_response.text)
+else:
+    for notice in notices:
+        publication_number = str(
+            notice.get("publication-number", "Keine Nummer")
+        )
+
+        title = str(
+            notice.get("notice-title", "Kein Titel")
+        )
+
+        buyer = str(
+            notice.get("buyer-name", "Unbekannter Auftraggeber")
+        )
+
+        # Sicherheitslimit, damit Telegram-Nachrichten nicht zu lang werden
+        title = title[:800]
+        buyer = buyer[:500]
+
+        message = (
+            f"🚨 Neue Ausschreibung\n\n"
+            f"📌 {title}\n\n"
+            f"🏢 {buyer}\n"
+            f"🔢 {publication_number}\n\n"
+            f"🔗 https://ted.europa.eu/de/notice/-/detail/{publication_number}"
+        )
+
+        telegram_response = requests.post(
+            telegram_url,
+            data={
+                "chat_id": chat_id,
+                "text": message
+            },
+            timeout=30
+        )
+
+        print(telegram_response.text)
