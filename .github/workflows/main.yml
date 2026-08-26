@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "0 */2 * * *"
 
+permissions:
+  contents: write
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -27,3 +30,11 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_IT_CHAT_ID: ${{ secrets.TELEGRAM_IT_CHAT_ID }}
         run: python bot_main.py
+
+      - name: Save posted IDs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add posted_ids.json
+          git diff --cached --quiet || git commit -m "Update posted IDs"
+          git push
