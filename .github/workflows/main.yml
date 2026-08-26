@@ -25,4 +25,5 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_IT_CHAT_ID: ${{ secrets.TELEGRAM_IT_CHAT_ID }}
         run: python bot_main.py
