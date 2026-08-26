@@ -1,37 +1,44 @@
 import os
-import json
+import io
 import re
+import json
+import hashlib
+import zipfile
 import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# --------------------------------------------------
+
+# ============================================================
 # EINSTELLUNGEN
-# --------------------------------------------------
+# ============================================================
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 BAU_CHAT = os.getenv("TELEGRAM_CHAT_ID")
 IT_CHAT = os.getenv("TELEGRAM_IT_CHAT_ID")
 
-TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 POSTED_FILE = "posted_ids.json"
 
-# Offizielle CPV-Hauptbereiche:
+TED_URL = "https://api.ted.europa.eu/v3/notices/search"
+
+OE_URL = "https://oeffentlichevergabe.de/api/notice-exports"
+
+
+# CPV:
 # 45 = Bauarbeiten
-# 48 = Softwarepakete und Informationssysteme
+# 48 = Software / Informationssysteme
 # 72 = IT-Dienstleistungen
 
 BAU_PREFIXES = ("45",)
 IT_PREFIXES = ("48", "72")
 
 
-# --------------------------------------------------
-# HILFSFUNKTIONEN
-# --------------------------------------------------
+# ============================================================
+# ALLGEMEINE HILFSFUNKTIONEN
+# ============================================================
 
 def clean_text(value):
-    """Macht TED-Felder zu sauber lesbarem Text."""
-
     if value is None:
         return ""
 
@@ -47,21 +54,18 @@ def clean_text(value):
 
     if isinstance(value, dict):
 
-        # Deutsch bevorzugen
         for key in ["deu", "de", "DE"]:
             if key in value:
                 text = clean_text(value[key])
                 if text:
                     return text
 
-        # Danach Englisch
         for key in ["eng", "en", "EN"]:
             if key in value:
                 text = clean_text(value[key])
                 if text:
                     return text
 
-        # Sonst ersten brauchbaren Wert nehmen
         for item in value.values():
             text = clean_text(item)
             if text:
@@ -71,64 +75,42 @@ def clean_text(value):
 
 
 def extract_cpv_codes(value):
-    """
-    Sucht rekursiv nach achtstelligen CPV-Codes.
-    Funktioniert auch bei Listen, Dictionaries oder URLs.
-    """
-
     codes = set()
 
     if value is None:
         return codes
 
     if isinstance(value, dict):
+
+        # Häufig steht der CPV-Code direkt unter "id"
+        if "id" in value:
+            candidate = str(value["id"])
+            match = re.search(r"(\d{8})", candidate)
+
+            if match:
+                codes.add(match.group(1))
+
         for item in value.values():
             codes.update(extract_cpv_codes(item))
 
     elif isinstance(value, list):
+
         for item in value:
             codes.update(extract_cpv_codes(item))
 
     else:
-        text = str(value)
 
-        # CPV-Codes haben 8 Ziffern
-        matches = re.findall(r"(?<!\d)(\d{8})(?!\d)", text)
+        matches = re.findall(
+            r"(?<!\d)(\d{8})(?!\d)",
+            str(value)
+        )
 
-        for match in matches:
-            codes.add(match)
+        codes.update(matches)
 
     return codes
 
 
-def determine_category(notice):
-    """
-    Verwendet möglichst die HAUPT-CPV-Klassifikation.
-    Dadurch reicht ein zufälliges IT-Wort im Text nicht mehr aus.
-    """
-
-    # 1. Hauptklassifikation des gesamten Verfahrens bevorzugen
-    procedure_codes = extract_cpv_codes(
-        notice.get("main-classification-proc")
-    )
-
-    if procedure_codes:
-        codes = procedure_codes
-
-    else:
-        # 2. Falls nicht vorhanden: Hauptklassifikation der Lose
-        lot_codes = extract_cpv_codes(
-            notice.get("main-classification-lot")
-        )
-
-        if lot_codes:
-            codes = lot_codes
-
-        else:
-            # 3. Letzte Rückfallebene
-            codes = extract_cpv_codes(
-                notice.get("classification-cpv")
-            )
+def classify_cpv(codes):
 
     has_bau = any(
         code.startswith(BAU_PREFIXES)
@@ -140,162 +122,149 @@ def determine_category(notice):
         for code in codes
     )
 
-    # Wenn ausschließlich Bau:
+    # Wir posten nur eindeutige Treffer.
     if has_bau and not has_it:
-        return "bau", codes
+        return "bau"
 
-    # Wenn ausschließlich IT:
     if has_it and not has_bau:
-        return "it", codes
+        return "it"
 
-    # Wenn Hauptcodes beides enthalten oder nichts eindeutig ist:
-    # lieber NICHT posten als falsch einsortieren.
-    return None, codes
+    return None
+
+
+def normalize(text):
+
+    text = text.lower()
+
+    text = re.sub(
+        r"[^a-zäöüß0-9]+",
+        " ",
+        text
+    )
+
+    return " ".join(
+        text.split()
+    )
+
+
+def create_fingerprint(title, buyer):
+
+    raw = (
+        normalize(title)
+        + "|"
+        + normalize(buyer)
+    )
+
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()
 
 
 def send_telegram(chat_id, message):
-    """Sendet eine Nachricht und gibt True bei Erfolg zurück."""
 
-    telegram_url = (
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    )
+    if not chat_id:
+        return False
 
-    response = requests.post(
-        telegram_url,
-        data={
-            "chat_id": chat_id,
-            "text": message
-        },
-        timeout=30
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{BOT_TOKEN}/sendMessage"
     )
 
     try:
+
+        response = requests.post(
+            url,
+            data={
+                "chat_id": chat_id,
+                "text": message,
+                "disable_web_page_preview": True
+            },
+            timeout=30
+        )
+
         result = response.json()
-    except Exception:
-        print("Telegram-Antwort konnte nicht gelesen werden.")
-        print(response.text)
-        return False
 
-    if result.get("ok") is True:
-        return True
+        if result.get("ok") is True:
+            return True
 
-    print("Telegram-Fehler:")
-    print(result)
+        print("Telegram Fehler:")
+        print(result)
+
+    except Exception as error:
+
+        print(
+            "Telegram-Verbindungsfehler:",
+            error
+        )
 
     return False
 
 
-# --------------------------------------------------
-# BEREITS GEPOSTETE AUSSCHREIBUNGEN LADEN
-# --------------------------------------------------
+# ============================================================
+# GEDÄCHTNIS LADEN
+# ============================================================
 
 try:
-    with open(POSTED_FILE, "r", encoding="utf-8") as file:
-        posted_ids = set(json.load(file))
 
-except (FileNotFoundError, json.JSONDecodeError):
+    with open(
+        POSTED_FILE,
+        "r",
+        encoding="utf-8"
+    ) as file:
+
+        saved = json.load(file)
+
+        if isinstance(saved, list):
+            posted_ids = set(saved)
+
+        else:
+            posted_ids = set()
+
+except (
+    FileNotFoundError,
+    json.JSONDecodeError
+):
+
     posted_ids = set()
 
-
-# --------------------------------------------------
-# NUR HEUTIGES DATUM – DEUTSCHE ZEIT
-# --------------------------------------------------
-
-today = datetime.now(
-    ZoneInfo("Europe/Berlin")
-).strftime("%Y%m%d")
-
-
-# --------------------------------------------------
-# TED ABFRAGEN
-# --------------------------------------------------
-
-payload = {
-
-    "query":
-        f"place-of-performance = DEU "
-        f"AND publication-date = {today}",
-
-    "fields": [
-        "publication-number",
-        "notice-title",
-        "buyer-name",
-        "publication-date",
-
-        # Für unsere neue CPV-Erkennung:
-        "main-classification-proc",
-        "main-classification-lot",
-        "classification-cpv"
-    ],
-
-    "page": 1,
-
-    # Erstmal bis zu 100 heutige Treffer prüfen
-    "limit": 100,
-
-    "paginationMode": "PAGE_NUMBER"
-}
-
-
-response = requests.post(
-    TED_URL,
-    json=payload,
-    timeout=30
-)
-
-response.raise_for_status()
-
-data = response.json()
-
-notices = data.get("notices", [])
-
-print(
-    f"Heutige TED-Treffer gefunden: {len(notices)}"
-)
-
-
-# --------------------------------------------------
-# AUSSCHREIBUNGEN VERARBEITEN
-# --------------------------------------------------
 
 new_posted_ids = set()
 
 
-for notice in notices:
+# ============================================================
+# HEUTIGES DATUM
+# ============================================================
 
-    number = clean_text(
-        notice.get("publication-number")
-    )
+berlin_now = datetime.now(
+    ZoneInfo("Europe/Berlin")
+)
 
-    # Keine Nummer = nicht verwendbar
-    if not number:
-        continue
+today_ted = berlin_now.strftime(
+    "%Y%m%d"
+)
 
-    # Schon einmal veröffentlicht?
-    if number in posted_ids:
-        continue
+today_oe = berlin_now.strftime(
+    "%Y-%m-%d"
+)
 
-    category, cpv_codes = determine_category(notice)
 
-    # Weder eindeutig Bau noch eindeutig IT
-    if category is None:
-        continue
+# ============================================================
+# GEMEINSAME VERARBEITUNG
+# ============================================================
 
-    title = clean_text(
-        notice.get("notice-title")
-    )
+def process_notice(
+    title,
+    buyer,
+    number,
+    publication_date,
+    cpv_codes,
+    link,
+    source
+):
 
-    buyer = clean_text(
-        notice.get("buyer-name")
-    )
-
-    publication_date = clean_text(
-        notice.get("publication-date")
-    )
-
-    cpv_display = ", ".join(
-        sorted(cpv_codes)
-    )
+    title = clean_text(title)
+    buyer = clean_text(buyer)
+    number = clean_text(number)
 
     if not title:
         title = "Titel nicht angegeben"
@@ -303,36 +272,74 @@ for notice in notices:
     if not buyer:
         buyer = "Auftraggeber nicht angegeben"
 
+    category = classify_cpv(
+        cpv_codes
+    )
 
-    # --------------------------------------------------
-    # RICHTIGEN TELEGRAM-KANAL AUSWÄHLEN
-    # --------------------------------------------------
+    if category is None:
+        return
+
+    # --------------------------------------------------------
+    # QUELLENÜBERGREIFENDE DUPLIKAT-ERKENNUNG
+    # --------------------------------------------------------
+
+    fingerprint = create_fingerprint(
+        title,
+        buyer
+    )
+
+    fingerprint_key = (
+        "FP:" + fingerprint
+    )
+
+    source_key = (
+        source
+        + ":"
+        + number
+    )
+
+    if (
+        fingerprint_key in posted_ids
+        or fingerprint_key in new_posted_ids
+        or source_key in posted_ids
+        or source_key in new_posted_ids
+    ):
+        return
+
 
     if category == "bau":
 
         chat_id = BAU_CHAT
-        category_name = "🏗 Bau & Infrastruktur"
 
-    elif category == "it":
-
-        chat_id = IT_CHAT
-        category_name = "💻 IT, Software & Digitalisierung"
+        category_name = (
+            "🏗 Bau & Infrastruktur"
+        )
 
     else:
-        continue
+
+        chat_id = IT_CHAT
+
+        category_name = (
+            "💻 IT, Software & Digitalisierung"
+        )
 
 
-    # --------------------------------------------------
-    # NACHRICHT ERSTELLEN
-    # --------------------------------------------------
+    cpv_display = ", ".join(
+        sorted(cpv_codes)
+    )
+
+    if not cpv_display:
+        cpv_display = "Keine Angabe"
+
 
     message = (
-        f"🚨 NEUE AUSSCHREIBUNG\n\n"
+        "🚨 NEUE AUSSCHREIBUNG\n\n"
+
         f"{category_name}\n\n"
 
         f"📌 {title[:900]}\n\n"
 
-        f"🏢 Auftraggeber:\n"
+        "🏢 Auftraggeber:\n"
         f"{buyer[:400]}\n\n"
 
         f"📅 Veröffentlicht: "
@@ -340,38 +347,492 @@ for notice in notices:
 
         f"🏷 CPV: {cpv_display}\n"
 
-        f"🔢 Nummer: {number}\n\n"
+        f"🔢 Nummer: "
+        f"{number}\n\n"
 
-        f"🔗 Ausschreibung öffnen:\n"
-        f"https://ted.europa.eu/de/notice/-/detail/{number}"
+        f"📡 Quelle: "
+        f"{source}\n\n"
+
+        "🔗 Ausschreibung öffnen:\n"
+        f"{link}"
     )
 
-
-    # --------------------------------------------------
-    # TELEGRAM SENDEN
-    # --------------------------------------------------
 
     success = send_telegram(
         chat_id,
         message
     )
 
-    # Nur merken, wenn Telegram wirklich erfolgreich war
+
     if success:
 
-        new_posted_ids.add(number)
+        new_posted_ids.add(
+            fingerprint_key
+        )
+
+        new_posted_ids.add(
+            source_key
+        )
 
         print(
-            f"✅ {category.upper()} gepostet: "
-            f"{number}"
+            f"✅ {source} / "
+            f"{category.upper()} "
+            f"gepostet: {number}"
         )
 
 
-# --------------------------------------------------
-# GEDÄCHTNIS AKTUALISIEREN
-# --------------------------------------------------
+# ============================================================
+# QUELLE 1: TED
+# ============================================================
 
-posted_ids.update(new_posted_ids)
+def fetch_ted():
+
+    print("TED wird geprüft...")
+
+    payload = {
+
+        "query":
+            f"place-of-performance = DEU "
+            f"AND publication-date = "
+            f"{today_ted}",
+
+        "fields": [
+            "publication-number",
+            "notice-title",
+            "buyer-name",
+            "publication-date",
+            "main-classification-proc",
+            "main-classification-lot",
+            "classification-cpv"
+        ],
+
+        "page": 1,
+
+        "limit": 100,
+
+        "paginationMode":
+            "PAGE_NUMBER"
+    }
+
+
+    response = requests.post(
+        TED_URL,
+        json=payload,
+        timeout=60
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    notices = data.get(
+        "notices",
+        []
+    )
+
+    print(
+        "TED Treffer:",
+        len(notices)
+    )
+
+
+    for notice in notices:
+
+        number = clean_text(
+            notice.get(
+                "publication-number"
+            )
+        )
+
+        title = clean_text(
+            notice.get(
+                "notice-title"
+            )
+        )
+
+        buyer = clean_text(
+            notice.get(
+                "buyer-name"
+            )
+        )
+
+        publication_date = clean_text(
+            notice.get(
+                "publication-date"
+            )
+        )
+
+
+        cpv_codes = set()
+
+        cpv_codes.update(
+            extract_cpv_codes(
+                notice.get(
+                    "main-classification-proc"
+                )
+            )
+        )
+
+        cpv_codes.update(
+            extract_cpv_codes(
+                notice.get(
+                    "main-classification-lot"
+                )
+            )
+        )
+
+        cpv_codes.update(
+            extract_cpv_codes(
+                notice.get(
+                    "classification-cpv"
+                )
+            )
+        )
+
+
+        link = (
+            "https://ted.europa.eu/"
+            "de/notice/-/detail/"
+            + number
+        )
+
+
+        process_notice(
+            title=title,
+            buyer=buyer,
+            number=number,
+            publication_date=publication_date,
+            cpv_codes=cpv_codes,
+            link=link,
+            source="TED"
+        )
+
+
+# ============================================================
+# QUELLE 2: ÖFFENTLICHEVERGABE.DE
+# ============================================================
+
+def find_buyer_from_ocds(
+    release
+):
+
+    buyer_name = ""
+
+    buyer = release.get(
+        "buyer",
+        {}
+    )
+
+    if isinstance(
+        buyer,
+        dict
+    ):
+
+        buyer_name = clean_text(
+            buyer.get("name")
+        )
+
+    if buyer_name:
+        return buyer_name
+
+
+    # Fallback über OCDS-Parties
+
+    parties = release.get(
+        "parties",
+        []
+    )
+
+    for party in parties:
+
+        roles = party.get(
+            "roles",
+            []
+        )
+
+        if "buyer" in roles:
+
+            name = clean_text(
+                party.get("name")
+            )
+
+            if name:
+                return name
+
+    return ""
+
+
+def find_cpv_from_ocds(
+    tender
+):
+
+    codes = set()
+
+    classification = tender.get(
+        "classification"
+    )
+
+    codes.update(
+        extract_cpv_codes(
+            classification
+        )
+    )
+
+    additional = tender.get(
+        "additionalClassifications",
+        []
+    )
+
+    codes.update(
+        extract_cpv_codes(
+            additional
+        )
+    )
+
+
+    # Lose ebenfalls berücksichtigen
+
+    lots = tender.get(
+        "lots",
+        []
+    )
+
+    for lot in lots:
+
+        codes.update(
+            extract_cpv_codes(
+                lot.get(
+                    "classification"
+                )
+            )
+        )
+
+        codes.update(
+            extract_cpv_codes(
+                lot.get(
+                    "additionalClassifications",
+                    []
+                )
+            )
+        )
+
+    return codes
+
+
+def fetch_oeffentliche_vergabe():
+
+    print(
+        "ÖffentlicheVergabe.de "
+        "wird geprüft..."
+    )
+
+
+    response = requests.get(
+        OE_URL,
+        params={
+            "pubDay": today_oe,
+            "format": "ocds.zip"
+        },
+        timeout=120
+    )
+
+    response.raise_for_status()
+
+
+    archive = zipfile.ZipFile(
+        io.BytesIO(
+            response.content
+        )
+    )
+
+
+    files = archive.namelist()
+
+    print(
+        "ÖffentlicheVergabe "
+        "Dateien:",
+        len(files)
+    )
+
+
+    for filename in files:
+
+        if not filename.lower().endswith(
+            ".json"
+        ):
+            continue
+
+
+        try:
+
+            raw = archive.read(
+                filename
+            )
+
+            package = json.loads(
+                raw.decode(
+                    "utf-8"
+                )
+            )
+
+        except Exception as error:
+
+            print(
+                "Datei konnte nicht "
+                "gelesen werden:",
+                filename,
+                error
+            )
+
+            continue
+
+
+        releases = package.get(
+            "releases",
+            []
+        )
+
+
+        for release in releases:
+
+            tender = release.get(
+                "tender",
+                {}
+            )
+
+            title = clean_text(
+                tender.get(
+                    "title"
+                )
+            )
+
+
+            buyer = find_buyer_from_ocds(
+                release
+            )
+
+
+            # OCDS-ID als eindeutige Nummer
+
+            number = clean_text(
+                release.get(
+                    "id"
+                )
+            )
+
+            if not number:
+
+                number = clean_text(
+                    release.get(
+                        "ocid"
+                    )
+                )
+
+
+            publication_date = clean_text(
+                release.get(
+                    "date"
+                )
+            )
+
+
+            cpv_codes = (
+                find_cpv_from_ocds(
+                    tender
+                )
+            )
+
+
+            # noticeId aus dem Dateinamen
+            notice_id = (
+                filename
+                .split("/")[-1]
+                .split(".json")[0]
+            )
+
+            # Bei Versionssuffix versuchen,
+            # den UUID-Teil zu verwenden.
+            uuid_match = re.search(
+                r"([0-9a-fA-F]{8}-"
+                r"[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{12})",
+                notice_id
+            )
+
+            if uuid_match:
+
+                notice_id = (
+                    uuid_match.group(1)
+                )
+
+
+            link = (
+                "https://"
+                "oeffentlichevergabe.de/"
+                "ui/de/search/details"
+                "?noticeId="
+                + notice_id
+            )
+
+
+            process_notice(
+                title=title,
+                buyer=buyer,
+                number=number,
+                publication_date=publication_date,
+                cpv_codes=cpv_codes,
+                link=link,
+                source="ÖffentlicheVergabe.de"
+            )
+
+
+# ============================================================
+# BEIDE QUELLEN AUSFÜHREN
+# ============================================================
+
+try:
+
+    fetch_ted()
+
+except Exception as error:
+
+    # Wichtig:
+    # Wenn TED ausfällt, soll Quelle 2
+    # trotzdem funktionieren.
+
+    print(
+        "❌ TED Fehler:",
+        error
+    )
+
+
+try:
+
+    fetch_oeffentliche_vergabe()
+
+except Exception as error:
+
+    # Auch umgekehrt:
+    # TED läuft weiter, wenn diese
+    # Quelle einmal Probleme hat.
+
+    print(
+        "❌ ÖffentlicheVergabe "
+        "Fehler:",
+        error
+    )
+
+
+# ============================================================
+# GEDÄCHTNIS SPEICHERN
+# ============================================================
+
+posted_ids.update(
+    new_posted_ids
+)
+
 
 with open(
     POSTED_FILE,
@@ -388,6 +849,10 @@ with open(
 
 
 print(
-    f"Neue Ausschreibungen gepostet: "
-    f"{len(new_posted_ids)}"
+    "✅ Lauf abgeschlossen."
+)
+
+print(
+    "Neue Einträge gespeichert:",
+    len(new_posted_ids)
 )
