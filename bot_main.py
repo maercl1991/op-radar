@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 
 # ============================================================
-# EINSTELLUNGEN
+# GRUNDEINSTELLUNGEN
 # ============================================================
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -20,7 +20,9 @@ BAU_CHAT = os.getenv("TELEGRAM_CHAT_ID")
 IT_CHAT = os.getenv("TELEGRAM_IT_CHAT_ID")
 
 POSTED_FILE = "posted_ids.json"
-PROFILE_FILE = "company_profile.json"
+
+BAU_PROFILE_FILE = "company_profile.json"
+IT_PROFILE_FILE = "company_profile_it.json"
 
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 
@@ -28,13 +30,40 @@ OE_EXPORT_URL = (
     "https://oeffentlichevergabe.de/api/notice-exports"
 )
 
+
+# ============================================================
+# PROFILE LADEN
+# ============================================================
+
+with open(
+    BAU_PROFILE_FILE,
+    "r",
+    encoding="utf-8"
+) as file:
+    BAU_PROFILE = json.load(file)
+
+
+with open(
+    IT_PROFILE_FILE,
+    "r",
+    encoding="utf-8"
+) as file:
+    IT_PROFILE = json.load(file)
+
+
+# ============================================================
+# CPV-KATEGORIEN
+# ============================================================
+
 BAU_PREFIXES = ("45",)
-IT_PREFIXES = ("48", "72")
+
+IT_PREFIXES = (
+    "48",
+    "72"
+)
 
 
-# ============================================================
-# ELEKTRO-CPV FÜR UNSER TESTPROFIL
-# ============================================================
+# Relevante Elektrobereiche für unseren Bau-Testkunden
 
 ELECTRO_CPV_PREFIXES = (
     "45310",
@@ -46,6 +75,7 @@ ELECTRO_CPV_PREFIXES = (
     "45317"
 )
 
+
 ELECTRO_CPV_EXCLUDED_PREFIXES = (
     "45313",   # Aufzüge / Rolltreppen
     "453154",  # Hochspannung
@@ -54,35 +84,16 @@ ELECTRO_CPV_EXCLUDED_PREFIXES = (
 
 
 # ============================================================
-# COMPANY DNA LADEN
+# SERVICEBEGRIFFE BAU / ELEKTRO
 # ============================================================
 
-with open(
-    PROFILE_FILE,
-    "r",
-    encoding="utf-8"
-) as file:
-
-    COMPANY_PROFILE = json.load(file)
-
-
-MINIMUM_MATCH_SCORE = (
-    COMPANY_PROFILE
-    .get("matching", {})
-    .get("minimum_match_score", 70)
-)
-
-
-# ============================================================
-# SERVICE-ALIASE
-# ============================================================
-
-SERVICE_ALIASES = [
+BAU_SERVICE_ALIASES = [
     "elektro",
     "elektrik",
     "elektrisch",
     "elektrotechnik",
     "elektroinstallation",
+    "elektroinstallationsarbeiten",
     "elektroarbeiten",
     "elektroanlage",
     "elektroanlagen",
@@ -90,6 +101,7 @@ SERVICE_ALIASES = [
     "schwachstrom",
     "niederspannung",
     "niederspannungsanlage",
+    "beleuchtung",
     "beleuchtungsanlage",
     "beleuchtungstechnik",
     "sicherheitsbeleuchtung",
@@ -103,14 +115,14 @@ SERVICE_ALIASES = [
     "netzwerktechnik",
     "fernmeldeanlage",
     "brandmeldeanlage",
+    "brandmeldetechnik",
     "bma",
     "elektrische installation"
 ]
 
 
-FOREIGN_WORK_KEYWORDS = [
+BAU_FOREIGN_KEYWORDS = [
     "brückenbau",
-    "brücke",
     "kanalbau",
     "kanalsanierung",
     "straßenbau",
@@ -121,6 +133,7 @@ FOREIGN_WORK_KEYWORDS = [
     "gleisbau",
     "rohrleitungsbau",
     "betonbau",
+    "stahlbetonarbeiten",
     "mauerarbeiten",
     "zimmerarbeiten",
     "dachdeckerarbeiten",
@@ -128,12 +141,74 @@ FOREIGN_WORK_KEYWORDS = [
     "bodenbelagarbeiten",
     "fassadensanierung",
     "regenentwässerung",
-    "außenanlagen"
+    "heizung und sanitär",
+    "heizungsarbeiten",
+    "sanitärarbeiten"
 ]
 
 
 # ============================================================
-# HILFSFUNKTIONEN
+# SERVICEBEGRIFFE IT
+# ============================================================
+
+IT_SERVICE_ALIASES = [
+    "software",
+    "softwareentwicklung",
+    "softwarepflege",
+    "softwarewartung",
+    "anwendungsentwicklung",
+    "webentwicklung",
+    "webanwendung",
+    "webanwendungen",
+    "webportal",
+    "onlineportal",
+    "fachanwendung",
+    "app",
+    "appentwicklung",
+    "mobile app",
+    "digitalisierung",
+    "it-dienstleistung",
+    "it-dienstleistungen",
+    "it-beratung",
+    "it consulting",
+    "systemintegration",
+    "systemmanagement",
+    "servermanagement",
+    "infrastrukturmanagement",
+    "cloud",
+    "cloud service",
+    "cloud services",
+    "datenbank",
+    "datenbanken",
+    "api",
+    "schnittstelle",
+    "schnittstellenentwicklung",
+    "it-infrastruktur",
+    "netzwerkmanagement",
+    "cybersecurity",
+    "it-sicherheit",
+    "informationstechnologie",
+    "weiterentwicklung der software",
+    "weiterentwicklung der anwendung",
+    "pflege und weiterentwicklung",
+    "betrieb einer it-anwendung",
+    "betrieb einer software"
+]
+
+
+IT_FOREIGN_KEYWORDS = [
+    "druckerlieferung",
+    "büromöbel",
+    "reine hardwarelieferung",
+    "mobilfunkvertrag",
+    "mobilfunkverträge",
+    "telefonvertrag",
+    "reine lizenzbeschaffung"
+]
+
+
+# ============================================================
+# BASIS-HILFSFUNKTIONEN
 # ============================================================
 
 def clean_text(value):
@@ -204,6 +279,57 @@ def normalize(text):
     )
 
 
+def contains_any(
+    text,
+    keywords
+):
+
+    normalized_text = normalize(text)
+
+    for keyword in keywords:
+
+        normalized_keyword = normalize(
+            keyword
+        )
+
+        if (
+            normalized_keyword
+            and
+            normalized_keyword in normalized_text
+        ):
+            return True
+
+    return False
+
+
+def matching_keywords(
+    text,
+    keywords
+):
+
+    normalized_text = normalize(text)
+
+    matches = []
+
+    for keyword in keywords:
+
+        normalized_keyword = normalize(
+            keyword
+        )
+
+        if (
+            normalized_keyword
+            and
+            normalized_keyword in normalized_text
+        ):
+
+            matches.append(
+                keyword
+            )
+
+    return matches
+
+
 def extract_number(value):
 
     if value is None:
@@ -213,7 +339,9 @@ def extract_number(value):
 
         for item in value:
 
-            result = extract_number(item)
+            result = extract_number(
+                item
+            )
 
             if result is not None:
                 return result
@@ -239,7 +367,9 @@ def extract_number(value):
 
         for item in value.values():
 
-            result = extract_number(item)
+            result = extract_number(
+                item
+            )
 
             if result is not None:
                 return result
@@ -276,6 +406,10 @@ def extract_number(value):
     return None
 
 
+# ============================================================
+# CPV
+# ============================================================
+
 def extract_cpv_codes(value):
 
     codes = set()
@@ -305,7 +439,9 @@ def extract_cpv_codes(value):
         for item in value.values():
 
             codes.update(
-                extract_cpv_codes(item)
+                extract_cpv_codes(
+                    item
+                )
             )
 
     elif isinstance(value, list):
@@ -313,7 +449,9 @@ def extract_cpv_codes(value):
         for item in value:
 
             codes.update(
-                extract_cpv_codes(item)
+                extract_cpv_codes(
+                    item
+                )
             )
 
     else:
@@ -323,7 +461,9 @@ def extract_cpv_codes(value):
             str(value)
         )
 
-        codes.update(matches)
+        codes.update(
+            matches
+        )
 
     return codes
 
@@ -344,16 +484,26 @@ def classify_cpv(codes):
         for code in codes
     )
 
-    if has_bau and not has_it:
+    if (
+        has_bau
+        and
+        not has_it
+    ):
         return "bau"
 
-    if has_it and not has_bau:
+    if (
+        has_it
+        and
+        not has_bau
+    ):
         return "it"
 
     return None
 
 
-def has_relevant_electro_cpv(codes):
+def has_relevant_electro_cpv(
+    codes
+):
 
     for code in codes:
 
@@ -370,7 +520,9 @@ def has_relevant_electro_cpv(codes):
     return False
 
 
-def has_excluded_electro_cpv(codes):
+def has_excluded_electro_cpv(
+    codes
+):
 
     return any(
         code.startswith(
@@ -379,6 +531,10 @@ def has_excluded_electro_cpv(codes):
         for code in codes
     )
 
+
+# ============================================================
+# DUPLIKATE
+# ============================================================
 
 def create_fingerprint(
     title,
@@ -396,71 +552,19 @@ def create_fingerprint(
     ).hexdigest()
 
 
-def contains_any(
-    text,
-    keywords
-):
-
-    text = normalize(text)
-
-    for keyword in keywords:
-
-        normalized_keyword = normalize(
-            keyword
-        )
-
-        if (
-            normalized_keyword
-            and
-            normalized_keyword in text
-        ):
-            return True
-
-    return False
-
-
-def matching_keywords(
-    text,
-    keywords
-):
-
-    text = normalize(text)
-
-    matches = []
-
-    for keyword in keywords:
-
-        normalized_keyword = normalize(
-            keyword
-        )
-
-        if (
-            normalized_keyword
-            and
-            normalized_keyword in text
-        ):
-
-            matches.append(
-                keyword
-            )
-
-    return matches
-
-
 # ============================================================
-# MATCHING V3
+# MATCHING V4 – BAU
 # ============================================================
 
-def calculate_match(
+def calculate_bau_match(
     title,
-    buyer,
     location_text,
     contract_value,
     cpv_codes,
     description=""
 ):
 
-    profile = COMPANY_PROFILE
+    profile = BAU_PROFILE
 
     title_text = normalize(
         title
@@ -470,32 +574,31 @@ def calculate_match(
         description
     )
 
-
-    service_terms = list(
+    profile_services = list(
         profile.get(
             "services",
             []
         )
     )
 
-    service_terms.extend(
-        SERVICE_ALIASES
+    profile_services.extend(
+        BAU_SERVICE_ALIASES
     )
 
 
-    title_service_matches = matching_keywords(
+    title_matches = matching_keywords(
         title_text,
-        service_terms
+        profile_services
     )
 
 
-    description_service_matches = matching_keywords(
+    description_matches = matching_keywords(
         description_text,
-        service_terms
+        profile_services
     )
 
 
-    electro_cpv_match = (
+    electro_cpv = (
         has_relevant_electro_cpv(
             cpv_codes
         )
@@ -509,14 +612,14 @@ def calculate_match(
     )
 
 
-    foreign_title_matches = matching_keywords(
+    foreign_title = matching_keywords(
         title_text,
-        FOREIGN_WORK_KEYWORDS
+        BAU_FOREIGN_KEYWORDS
     )
 
 
     # ========================================================
-    # K.O. – ausgeschlossener Elektrobereich
+    # HARD K.O.
     # ========================================================
 
     if excluded_cpv:
@@ -525,54 +628,43 @@ def calculate_match(
             "eligible": False,
             "score": 0,
             "confidence": 100,
-            "ko": True,
             "reasons": [
-                "✗ CPV-Hauptleistung passt nicht zum Unternehmensprofil"
+                "✗ Elektrobereich passt nicht zum Unternehmensprofil"
             ],
             "unknown": []
         }
 
 
-    # ========================================================
-    # KERNLEISTUNGS-GATE
-    # ========================================================
+    # Titel oder CPV muss echte Kernleistung zeigen
 
     strong_service_match = (
-        bool(title_service_matches)
+        bool(title_matches)
         or
-        electro_cpv_match
-    )
-
-
-    weak_description_match = (
-        bool(description_service_matches)
-        and
-        not strong_service_match
+        electro_cpv
     )
 
 
     if not strong_service_match:
 
         reason = (
-            "Keine passende Kernleistung "
+            "Keine Elektro-Kernleistung "
             "als Hauptgegenstand erkannt"
         )
 
 
-        if weak_description_match:
+        if description_matches:
 
             reason += (
-                " – Elektro wird nur "
-                "als Nebenleistung erwähnt"
+                " – Elektro nur als Nebenleistung erwähnt"
             )
 
 
-        if foreign_title_matches:
+        if foreign_title:
 
             reason += (
                 " – fachfremdes Gewerk: "
                 + ", ".join(
-                    foreign_title_matches[:3]
+                    foreign_title[:3]
                 )
             )
 
@@ -581,7 +673,6 @@ def calculate_match(
             "eligible": False,
             "score": 0,
             "confidence": 100,
-            "ko": True,
             "reasons": [
                 "✗ " + reason
             ],
@@ -590,56 +681,80 @@ def calculate_match(
 
 
     # ========================================================
-    # MATCH-BERECHNUNG
+    # FACHLICHER MATCH
     # ========================================================
 
-    score = 0
-    confidence = 0
+    score = 70
+    confidence = 45
 
     reasons = []
     unknown = []
 
 
-    # ========================================================
-    # SERVICE / HAUPTLEISTUNG – 50 %
-    # ========================================================
-
     if (
-        title_service_matches
+        title_matches
         and
-        electro_cpv_match
+        electro_cpv
     ):
 
-        score += 50
-        confidence += 50
+        score = 80
+        confidence = 55
 
         reasons.append(
             "✓ Kernleistung durch Titel und CPV bestätigt"
         )
 
 
-    elif electro_cpv_match:
+    elif title_matches:
 
-        score += 48
-        confidence += 50
+        score = 75
+
+        reasons.append(
+            "✓ Elektro-Kernleistung im Titel erkannt"
+        )
+
+
+    elif electro_cpv:
+
+        score = 72
+        confidence = 50
 
         reasons.append(
             "✓ Passender Elektro-CPV-Code"
         )
 
 
-    elif title_service_matches:
+    # ========================================================
+    # PROJEKTTYP
+    # ========================================================
 
-        score += 45
-        confidence += 40
+    preferred_projects = profile.get(
+        "preferred_projects",
+        []
+    )
+
+
+    combined_text = (
+        title_text
+        + " "
+        + description_text
+    )
+
+
+    if contains_any(
+        combined_text,
+        preferred_projects
+    ):
+
+        score += 8
 
         reasons.append(
-            "✓ Kernleistung eindeutig im Titel erkannt"
+            "✓ Bevorzugter Projekttyp"
         )
 
 
     # ========================================================
-    # REGION – 20 %
+    # REGION
     # ========================================================
 
     regions = (
@@ -658,8 +773,8 @@ def calculate_match(
 
     if nationwide:
 
-        score += 20
-        confidence += 20
+        score += 7
+        confidence += 15
 
         reasons.append(
             "✓ Einsatzgebiet passt"
@@ -668,7 +783,7 @@ def calculate_match(
 
     elif location_text:
 
-        confidence += 20
+        confidence += 15
 
 
         if contains_any(
@@ -676,7 +791,7 @@ def calculate_match(
             regions
         ):
 
-            score += 20
+            score += 10
 
             reasons.append(
                 "✓ Region passt"
@@ -685,8 +800,10 @@ def calculate_match(
 
         else:
 
+            score -= 20
+
             reasons.append(
-                "✗ Region außerhalb des bevorzugten Einsatzgebiets"
+                "✗ Region außerhalb des Einsatzgebiets"
             )
 
 
@@ -698,7 +815,321 @@ def calculate_match(
 
 
     # ========================================================
-    # AUFTRAGSWERT – 15 %
+    # AUFTRAGSWERT
+    # ========================================================
+
+    value_profile = profile.get(
+        "contract_value",
+        {}
+    )
+
+
+    if contract_value is not None:
+
+        confidence += 15
+
+        ideal_min = value_profile.get(
+            "ideal_min_eur"
+        )
+
+        ideal_max = value_profile.get(
+            "ideal_max_eur"
+        )
+
+        absolute_max = value_profile.get(
+            "absolute_max_eur"
+        )
+
+
+        if (
+            absolute_max is not None
+            and
+            contract_value > absolute_max
+        ):
+
+            score -= 20
+
+            reasons.append(
+                "✗ Auftragswert über Unternehmensgrenze"
+            )
+
+
+        elif (
+            ideal_min is not None
+            and
+            ideal_max is not None
+            and
+            ideal_min
+            <= contract_value
+            <= ideal_max
+        ):
+
+            score += 10
+
+            reasons.append(
+                "✓ Auftragswert im Idealbereich"
+            )
+
+
+        else:
+
+            score += 3
+
+            reasons.append(
+                "◐ Auftragswert grundsätzlich möglich"
+            )
+
+
+    else:
+
+        unknown.append(
+            "Auftragswert nicht angegeben"
+        )
+
+
+    # Pflichtnachweise noch unbekannt
+
+    unknown.append(
+        "Pflichtnachweise noch nicht vollständig geprüft"
+    )
+
+
+    confidence = min(
+        confidence,
+        95
+    )
+
+
+    score = max(
+        0,
+        min(
+            round(score),
+            100
+        )
+    )
+
+
+    return {
+        "eligible": True,
+        "score": score,
+        "confidence": confidence,
+        "reasons": reasons,
+        "unknown": unknown
+    }
+
+
+# ============================================================
+# MATCHING V4 – IT
+# ============================================================
+
+def calculate_it_match(
+    title,
+    location_text,
+    contract_value,
+    cpv_codes,
+    description=""
+):
+
+    profile = IT_PROFILE
+
+
+    title_text = normalize(
+        title
+    )
+
+
+    description_text = normalize(
+        description
+    )
+
+
+    services = list(
+        profile.get(
+            "services",
+            []
+        )
+    )
+
+
+    services.extend(
+        IT_SERVICE_ALIASES
+    )
+
+
+    title_matches = matching_keywords(
+        title_text,
+        services
+    )
+
+
+    description_matches = matching_keywords(
+        description_text,
+        services
+    )
+
+
+    foreign_title = matching_keywords(
+        title_text,
+        IT_FOREIGN_KEYWORDS
+    )
+
+
+    # ========================================================
+    # IT-KERNLEISTUNG
+    # ========================================================
+
+    if (
+        not title_matches
+        and
+        not description_matches
+    ):
+
+        return {
+            "eligible": False,
+            "score": 0,
+            "confidence": 100,
+            "reasons": [
+                "✗ Keine passende IT-Kernleistung erkannt"
+            ],
+            "unknown": []
+        }
+
+
+    if (
+        foreign_title
+        and
+        not title_matches
+    ):
+
+        return {
+            "eligible": False,
+            "score": 0,
+            "confidence": 100,
+            "reasons": [
+                "✗ Hauptgegenstand passt nicht zum IT-Profil"
+            ],
+            "unknown": []
+        }
+
+
+    score = 70
+    confidence = 45
+
+    reasons = []
+    unknown = []
+
+
+    if title_matches:
+
+        score = 78
+        confidence = 55
+
+        reasons.append(
+            "✓ IT-Kernleistung im Titel erkannt"
+        )
+
+
+    elif description_matches:
+
+        score = 70
+
+        reasons.append(
+            "✓ IT-Leistung in der Beschreibung erkannt"
+        )
+
+
+    # ========================================================
+    # PROJEKTTYP
+    # ========================================================
+
+    preferred_projects = profile.get(
+        "preferred_projects",
+        []
+    )
+
+
+    combined_text = (
+        title_text
+        + " "
+        + description_text
+    )
+
+
+    if contains_any(
+        combined_text,
+        preferred_projects
+    ):
+
+        score += 8
+
+        reasons.append(
+            "✓ Bevorzugter IT-Projekttyp"
+        )
+
+
+    # ========================================================
+    # REGION
+    # ========================================================
+
+    nationwide = (
+        profile
+        .get("location", {})
+        .get("nationwide", False)
+    )
+
+
+    regions = (
+        profile
+        .get("location", {})
+        .get("regions", [])
+    )
+
+
+    if nationwide:
+
+        score += 7
+        confidence += 15
+
+        reasons.append(
+            "✓ Deutschlandweites Einsatzgebiet"
+        )
+
+
+    elif location_text:
+
+        confidence += 15
+
+
+        if contains_any(
+            location_text,
+            regions
+        ):
+
+            score += 10
+
+            reasons.append(
+                "✓ Region passt"
+            )
+
+
+        else:
+
+            score -= 15
+
+            reasons.append(
+                "✗ Region außerhalb des Einsatzgebiets"
+            )
+
+
+    else:
+
+        unknown.append(
+            "Region nicht angegeben"
+        )
+
+
+    # ========================================================
+    # AUFTRAGSWERT
     # ========================================================
 
     value_profile = profile.get(
@@ -733,8 +1164,10 @@ def calculate_match(
             contract_value > absolute_max
         ):
 
+            score -= 20
+
             reasons.append(
-                "✗ Auftragswert über Unternehmensgrenze"
+                "✗ Auftrag größer als Unternehmensgrenze"
             )
 
 
@@ -748,19 +1181,19 @@ def calculate_match(
             <= ideal_max
         ):
 
-            score += 15
+            score += 10
 
             reasons.append(
-                "✓ Auftragsgröße liegt im Idealbereich"
+                "✓ Auftragsgröße im Idealbereich"
             )
 
 
         else:
 
-            score += 7
+            score += 3
 
             reasons.append(
-                "◐ Auftragsgröße möglich, aber nicht ideal"
+                "◐ Auftragswert grundsätzlich möglich"
             )
 
 
@@ -771,71 +1204,30 @@ def calculate_match(
         )
 
 
-    # ========================================================
-    # PROJEKTTYP – 10 %
-    # ========================================================
-
-    preferred_projects = profile.get(
-        "preferred_projects",
-        []
-    )
-
-
-    confidence += 10
-
-
-    combined_project_text = (
-        title_text
-        + " "
-        + description_text
-    )
-
-
-    if contains_any(
-        combined_project_text,
-        preferred_projects
-    ):
-
-        score += 10
-
-        reasons.append(
-            "✓ Bevorzugter Projekttyp"
-        )
-
-
-    else:
-
-        reasons.append(
-            "◐ Projekttyp neutral"
-        )
-
-
-    # ========================================================
-    # PFLICHTNACHWEISE – 5 %
-    # ========================================================
-
     unknown.append(
         "Pflichtnachweise noch nicht vollständig geprüft"
     )
 
 
-    final_score = min(
-        round(score),
-        100
+    confidence = min(
+        confidence,
+        95
     )
 
 
-    final_confidence = min(
-        round(confidence),
-        100
+    score = max(
+        0,
+        min(
+            round(score),
+            100
+        )
     )
 
 
     return {
         "eligible": True,
-        "score": final_score,
-        "confidence": final_confidence,
-        "ko": False,
+        "score": score,
+        "confidence": confidence,
         "reasons": reasons,
         "unknown": unknown
     }
@@ -876,7 +1268,10 @@ def send_telegram(
         result = response.json()
 
 
-        if result.get("ok") is True:
+        if result.get(
+            "ok"
+        ) is True:
+
             return True
 
 
@@ -909,7 +1304,9 @@ try:
         encoding="utf-8"
     ) as file:
 
-        saved = json.load(file)
+        saved = json.load(
+            file
+        )
 
 
         if isinstance(
@@ -1039,36 +1436,59 @@ def process_notice(
 
 
     # ========================================================
-    # MATCHING V3
+    # RICHTIGES PROFIL AUSWÄHLEN
     # ========================================================
 
-    match = calculate_match(
+    if category == "bau":
 
-        title=title,
+        profile = BAU_PROFILE
 
-        buyer=buyer,
+        match = calculate_bau_match(
+            title=title,
+            location_text=location_text,
+            contract_value=contract_value,
+            cpv_codes=cpv_codes,
+            description=description
+        )
 
-        location_text=
-            location_text,
+        chat_id = BAU_CHAT
 
-        contract_value=
-            contract_value,
+        category_name = (
+            "🏗 Bau & Infrastruktur"
+        )
 
-        cpv_codes=
-            cpv_codes,
 
-        description=
-            description
-    )
+    else:
 
+        profile = IT_PROFILE
+
+        match = calculate_it_match(
+            title=title,
+            location_text=location_text,
+            contract_value=contract_value,
+            cpv_codes=cpv_codes,
+            description=description
+        )
+
+        chat_id = IT_CHAT
+
+        category_name = (
+            "💻 IT, Software & Digitalisierung"
+        )
+
+
+    # ========================================================
+    # NICHT PASSEND
+    # ========================================================
 
     if not match[
         "eligible"
     ]:
 
         print(
-            "⛔ Fachlich aussortiert:",
-            title
+            f"⛔ {category.upper()} "
+            f"fachlich aussortiert: "
+            f"{title}"
         )
 
         return
@@ -1084,14 +1504,21 @@ def process_notice(
     ]
 
 
-    if (
-        score
-        <
-        MINIMUM_MATCH_SCORE
-    ):
+    minimum_score = (
+        profile
+        .get("matching", {})
+        .get(
+            "minimum_match_score",
+            70
+        )
+    )
+
+
+    if score < minimum_score:
 
         print(
-            f"⏭ Match zu niedrig: "
+            f"⏭ {category.upper()} "
+            f"Match zu niedrig: "
             f"{score}% | "
             f"{title}"
         )
@@ -1100,55 +1527,37 @@ def process_notice(
 
 
     # ========================================================
-    # KANAL
-    # ========================================================
-
-    if category == "bau":
-
-        chat_id = BAU_CHAT
-
-        category_name = (
-            "🏗 Bau & Infrastruktur"
-        )
-
-
-    else:
-
-        chat_id = IT_CHAT
-
-        category_name = (
-            "💻 IT, Software & Digitalisierung"
-        )
-
-
-    # ========================================================
     # EMPFEHLUNG
     # ========================================================
 
     if (
-        score >= 85
+        score >= 90
         and
         confidence >= 70
     ):
 
         recommendation = (
-            "🟢 BEWERBUNG SEHR INTERESSANT"
+            "🟢 SEHR STARKER MATCH"
         )
 
 
-    elif score >= 75:
+    elif score >= 80:
 
         recommendation = (
-            "🟢 BEWERBUNG PRÜFEN"
+            "🟢 GUTER MATCH"
         )
 
 
     else:
 
         recommendation = (
-            "🟡 WEITERE PRÜFUNG EMPFOHLEN"
+            "🟡 INTERESSANT – DETAILS PRÜFEN"
         )
 
+
+    # ========================================================
+    # TEXT
+    # ========================================================
 
     reasons_text = "\n".join(
         match[
@@ -1193,6 +1602,14 @@ def process_notice(
         )
 
 
+    company_name = (
+        profile.get(
+            "company_name",
+            "Testunternehmen"
+        )
+    )
+
+
     message = (
         f"🎯 {score}% MATCH\n"
         f"📊 {confidence}% DATENSICHERHEIT\n\n"
@@ -1201,9 +1618,12 @@ def process_notice(
 
         f"{category_name}\n\n"
 
+        f"🏢 Match-Profil:\n"
+        f"{company_name}\n\n"
+
         f"📌 {title[:800]}\n\n"
 
-        f"🏢 Auftraggeber:\n"
+        f"🏛 Auftraggeber:\n"
         f"{buyer[:350]}\n\n"
 
         f"📍 Ort:\n"
@@ -1212,10 +1632,10 @@ def process_notice(
         f"💰 Auftragswert:\n"
         f"{value_text}\n\n"
 
-        f"📅 Veröffentlicht: "
+        f"📅 Veröffentlicht:\n"
         f"{publication_date}\n\n"
 
-        "Warum passend?\n"
+        f"Warum passend?\n"
         f"{reasons_text}"
 
         f"{unknown_text}\n\n"
@@ -1223,7 +1643,7 @@ def process_notice(
         f"📡 Quelle: "
         f"{source}\n\n"
 
-        "🔗 Ausschreibung:\n"
+        f"🔗 Ausschreibung:\n"
         f"{link}"
     )
 
@@ -1246,9 +1666,10 @@ def process_notice(
 
 
         print(
-            f"✅ {score}% Match "
-            f"({confidence}% Confidence) "
-            f"gepostet: {number}"
+            f"✅ {category.upper()} "
+            f"{score}% Match "
+            f"({confidence}% Confidence): "
+            f"{title}"
         )
 
 
@@ -1338,37 +1759,32 @@ def fetch_ted():
 
 
         location_text = (
-
             clean_text(
                 notice.get(
                     "place-of-performance-city-proc"
                 )
             )
-
             + " "
-
-            + clean_text(
+            +
+            clean_text(
                 notice.get(
                     "place-of-performance-city-lot"
                 )
             )
-
             + " "
-
-            + clean_text(
+            +
+            clean_text(
                 notice.get(
                     "place-of-performance-subdiv-proc"
                 )
             )
-
             + " "
-
-            + clean_text(
+            +
+            clean_text(
                 notice.get(
                     "place-of-performance-subdiv-lot"
                 )
             )
-
         ).strip()
 
 
@@ -1381,10 +1797,7 @@ def fetch_ted():
         )
 
 
-        if (
-            contract_value
-            is None
-        ):
+        if contract_value is None:
 
             contract_value = (
                 extract_number(
@@ -1431,8 +1844,7 @@ def fetch_ted():
             contract_value=
                 contract_value,
 
-            description=
-                "",
+            description="",
 
             link=(
                 "https://ted.europa.eu/"
@@ -1440,8 +1852,7 @@ def fetch_ted():
                 + number
             ),
 
-            source=
-                "TED"
+            source="TED"
         )
 
 
@@ -1781,7 +2192,7 @@ def fetch_oeffentliche_vergabe():
 
 
 # ============================================================
-# BEIDE QUELLEN AUSFÜHREN
+# QUELLEN AUSFÜHREN
 # ============================================================
 
 try:
@@ -1840,8 +2251,9 @@ with open(
 
 
 print(
-    "✅ Matching V3 abgeschlossen."
+    "✅ Matching V4 abgeschlossen."
 )
+
 
 print(
     "Neue Matches:",
