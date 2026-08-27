@@ -1,0 +1,76 @@
+{
+  "company_id": "test_elektro_001",
+  "company_name": "Elektro Berlin GmbH",
+  "industry": "Elektrohandwerk / Gebäudetechnik",
+
+  "location": {
+    "city": "Berlin",
+    "regions": [
+      "Berlin",
+      "Brandenburg"
+    ],
+    "max_distance_km": 100,
+    "nationwide": false
+  },
+
+  "company": {
+    "employees": 15
+  },
+
+  "contract_value": {
+    "ideal_min_eur": 30000,
+    "ideal_max_eur": 300000,
+    "absolute_max_eur": 500000
+  },
+
+  "services": [
+    "Elektroinstallation",
+    "Elektroanlagen",
+    "Gebäudetechnik",
+    "Beleuchtung",
+    "Beleuchtungsanlagen",
+    "Niederspannung",
+    "Niederspannungsanlagen",
+    "Netzwerktechnik",
+    "Datennetzwerke",
+    "Schaltschränke"
+  ],
+
+  "preferred_projects": [
+    "Schulen",
+    "Kitas",
+    "Verwaltungsgebäude",
+    "öffentliche Gebäude",
+    "Gewerbeimmobilien",
+    "Sanierung",
+    "Neubau"
+  ],
+
+  "excluded_services": [
+    "Hochspannungsnetze",
+    "Hochspannungsanlagen",
+    "Photovoltaik-Großanlagen",
+    "Solarparks",
+    "reine Planungsleistungen"
+  ],
+
+  "references": [
+    "Elektroinstallation öffentliche Gebäude",
+    "Elektroinstallation Gewerbegebäude"
+  ],
+
+  "certifications": [],
+
+  "matching": {
+    "minimum_match_score": 70,
+
+    "weights": {
+      "service": 35,
+      "region": 20,
+      "contract_value": 15,
+      "project_type": 10,
+      "requirements": 10,
+      "references": 10
+    }
+  }
+}
