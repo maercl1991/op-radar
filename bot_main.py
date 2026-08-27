@@ -63,8 +63,6 @@ IT_PREFIXES = (
 )
 
 
-# Relevante Elektrobereiche für unseren Bau-Testkunden
-
 ELECTRO_CPV_PREFIXES = (
     "45310",
     "45311",
@@ -77,14 +75,14 @@ ELECTRO_CPV_PREFIXES = (
 
 
 ELECTRO_CPV_EXCLUDED_PREFIXES = (
-    "45313",   # Aufzüge / Rolltreppen
-    "453154",  # Hochspannung
-    "453155"   # Mittelspannung
+    "45313",
+    "453154",
+    "453155"
 )
 
 
 # ============================================================
-# SERVICEBEGRIFFE BAU / ELEKTRO
+# BAU / ELEKTRO
 # ============================================================
 
 BAU_SERVICE_ALIASES = [
@@ -148,11 +146,10 @@ BAU_FOREIGN_KEYWORDS = [
 
 
 # ============================================================
-# SERVICEBEGRIFFE IT
+# IT
 # ============================================================
 
 IT_SERVICE_ALIASES = [
-    "software",
     "softwareentwicklung",
     "softwarepflege",
     "softwarewartung",
@@ -163,7 +160,6 @@ IT_SERVICE_ALIASES = [
     "webportal",
     "onlineportal",
     "fachanwendung",
-    "app",
     "appentwicklung",
     "mobile app",
     "digitalisierung",
@@ -175,19 +171,15 @@ IT_SERVICE_ALIASES = [
     "systemmanagement",
     "servermanagement",
     "infrastrukturmanagement",
-    "cloud",
     "cloud service",
     "cloud services",
-    "datenbank",
-    "datenbanken",
-    "api",
-    "schnittstelle",
+    "datenbankentwicklung",
+    "api entwicklung",
     "schnittstellenentwicklung",
     "it-infrastruktur",
     "netzwerkmanagement",
     "cybersecurity",
     "it-sicherheit",
-    "informationstechnologie",
     "weiterentwicklung der software",
     "weiterentwicklung der anwendung",
     "pflege und weiterentwicklung",
@@ -196,19 +188,68 @@ IT_SERVICE_ALIASES = [
 ]
 
 
-IT_FOREIGN_KEYWORDS = [
+# Begriffe, die allein noch NICHT reichen,
+# um einen guten IT-Match zu erzeugen.
+
+IT_GENERIC_TERMS = [
+    "software",
+    "it",
+    "app",
+    "cloud",
+    "server",
+    "netzwerk",
+    "lizenz",
+    "lizenzen"
+]
+
+
+# Hard-K.O.-Kandidaten
+
+IT_EXCLUDED_MAIN_SERVICES = [
+    "lizenzverlängerung",
+    "verlängerung von lizenzen",
+    "lizenzbeschaffung",
+    "beschaffung von lizenzen",
+    "softwarelizenzen",
+    "software-lizenzen",
+    "subscription verlängerung",
+    "abonnementverlängerung",
+    "hardwarelieferung",
+    "hardwarebeschaffung",
     "druckerlieferung",
-    "büromöbel",
-    "reine hardwarelieferung",
+    "druckerbeschaffung",
     "mobilfunkvertrag",
     "mobilfunkverträge",
     "telefonvertrag",
-    "reine lizenzbeschaffung"
+    "telefonverträge"
+]
+
+
+# Begriffe, die zeigen, dass trotz Lizenz/Hardware
+# eine relevante Dienstleistung enthalten ist.
+
+IT_OVERRIDE_SERVICE_TERMS = [
+    "entwicklung",
+    "softwareentwicklung",
+    "anwendungsentwicklung",
+    "weiterentwicklung",
+    "pflege",
+    "wartung",
+    "betrieb",
+    "migration",
+    "integration",
+    "implementierung",
+    "customizing",
+    "beratung",
+    "support",
+    "systemmanagement",
+    "projektleistung",
+    "dienstleistung"
 ]
 
 
 # ============================================================
-# BASIS-HILFSFUNKTIONEN
+# HILFSFUNKTIONEN
 # ============================================================
 
 def clean_text(value):
@@ -382,11 +423,9 @@ def extract_number(value):
 
     except Exception:
 
-        text = str(value)
-
         match = re.search(
             r"\d+(?:[.,]\d+)?",
-            text
+            str(value)
         )
 
         if match:
@@ -553,7 +592,7 @@ def create_fingerprint(
 
 
 # ============================================================
-# MATCHING V4 – BAU
+# BAU-MATCHING
 # ============================================================
 
 def calculate_bau_match(
@@ -574,27 +613,28 @@ def calculate_bau_match(
         description
     )
 
-    profile_services = list(
+
+    services = list(
         profile.get(
             "services",
             []
         )
     )
 
-    profile_services.extend(
+    services.extend(
         BAU_SERVICE_ALIASES
     )
 
 
     title_matches = matching_keywords(
         title_text,
-        profile_services
+        services
     )
 
 
     description_matches = matching_keywords(
         description_text,
-        profile_services
+        services
     )
 
 
@@ -618,10 +658,6 @@ def calculate_bau_match(
     )
 
 
-    # ========================================================
-    # HARD K.O.
-    # ========================================================
-
     if excluded_cpv:
 
         return {
@@ -634,8 +670,6 @@ def calculate_bau_match(
             "unknown": []
         }
 
-
-    # Titel oder CPV muss echte Kernleistung zeigen
 
     strong_service_match = (
         bool(title_matches)
@@ -680,10 +714,6 @@ def calculate_bau_match(
         }
 
 
-    # ========================================================
-    # FACHLICHER MATCH
-    # ========================================================
-
     score = 70
     confidence = 45
 
@@ -724,10 +754,6 @@ def calculate_bau_match(
         )
 
 
-    # ========================================================
-    # PROJEKTTYP
-    # ========================================================
-
     preferred_projects = profile.get(
         "preferred_projects",
         []
@@ -752,10 +778,6 @@ def calculate_bau_match(
             "✓ Bevorzugter Projekttyp"
         )
 
-
-    # ========================================================
-    # REGION
-    # ========================================================
 
     regions = (
         profile
@@ -813,10 +835,6 @@ def calculate_bau_match(
             "Region nicht angegeben"
         )
 
-
-    # ========================================================
-    # AUFTRAGSWERT
-    # ========================================================
 
     value_profile = profile.get(
         "contract_value",
@@ -887,39 +905,31 @@ def calculate_bau_match(
         )
 
 
-    # Pflichtnachweise noch unbekannt
-
     unknown.append(
         "Pflichtnachweise noch nicht vollständig geprüft"
     )
 
 
-    confidence = min(
-        confidence,
-        95
-    )
-
-
-    score = max(
-        0,
-        min(
-            round(score),
-            100
-        )
-    )
-
-
     return {
         "eligible": True,
-        "score": score,
-        "confidence": confidence,
+        "score": max(
+            0,
+            min(
+                round(score),
+                100
+            )
+        ),
+        "confidence": min(
+            confidence,
+            95
+        ),
         "reasons": reasons,
         "unknown": unknown
     }
 
 
 # ============================================================
-# MATCHING V4 – IT
+# IT-MATCHING V5
 # ============================================================
 
 def calculate_it_match(
@@ -932,16 +942,78 @@ def calculate_it_match(
 
     profile = IT_PROFILE
 
-
     title_text = normalize(
         title
     )
-
 
     description_text = normalize(
         description
     )
 
+    combined_text = (
+        title_text
+        + " "
+        + description_text
+    )
+
+
+    # ========================================================
+    # 1. AUSSCHLUSSKRITERIEN PRÜFEN
+    # ========================================================
+
+    excluded_profile_terms = (
+        profile.get(
+            "excluded_services",
+            []
+        )
+    )
+
+    all_excluded_terms = (
+        excluded_profile_terms
+        +
+        IT_EXCLUDED_MAIN_SERVICES
+    )
+
+
+    exclusion_matches = matching_keywords(
+        title_text,
+        all_excluded_terms
+    )
+
+
+    override_matches = matching_keywords(
+        combined_text,
+        IT_OVERRIDE_SERVICE_TERMS
+    )
+
+
+    # Wenn der Titel klar reine Lizenz-/Hardwarebeschaffung
+    # beschreibt und keine relevante Dienstleistung erkennbar ist:
+    # HARD K.O.
+
+    if (
+        exclusion_matches
+        and
+        not override_matches
+    ):
+
+        return {
+            "eligible": False,
+            "score": 0,
+            "confidence": 100,
+            "reasons": [
+                "✗ Hauptgegenstand ist eine ausgeschlossene IT-Leistung: "
+                + ", ".join(
+                    exclusion_matches[:3]
+                )
+            ],
+            "unknown": []
+        }
+
+
+    # ========================================================
+    # 2. RELEVANTE IT-LEISTUNG ERKENNEN
+    # ========================================================
 
     services = list(
         profile.get(
@@ -949,7 +1021,6 @@ def calculate_it_match(
             []
         )
     )
-
 
     services.extend(
         IT_SERVICE_ALIASES
@@ -968,37 +1039,26 @@ def calculate_it_match(
     )
 
 
-    foreign_title = matching_keywords(
-        title_text,
-        IT_FOREIGN_KEYWORDS
-    )
+    # Allgemeines Wort "Software" oder "IT" reicht NICHT.
+    # Wir wollen möglichst echte Dienstleistungen erkennen.
 
+    strong_title_matches = [
+        item
+        for item in title_matches
+        if normalize(item)
+        not in [
+            normalize(x)
+            for x in IT_GENERIC_TERMS
+        ]
+    ]
 
-    # ========================================================
-    # IT-KERNLEISTUNG
-    # ========================================================
 
     if (
-        not title_matches
+        not strong_title_matches
         and
         not description_matches
-    ):
-
-        return {
-            "eligible": False,
-            "score": 0,
-            "confidence": 100,
-            "reasons": [
-                "✗ Keine passende IT-Kernleistung erkannt"
-            ],
-            "unknown": []
-        }
-
-
-    if (
-        foreign_title
         and
-        not title_matches
+        not override_matches
     ):
 
         return {
@@ -1006,26 +1066,40 @@ def calculate_it_match(
             "score": 0,
             "confidence": 100,
             "reasons": [
-                "✗ Hauptgegenstand passt nicht zum IT-Profil"
+                "✗ Keine relevante IT-Dienstleistung erkannt"
             ],
             "unknown": []
         }
 
 
-    score = 70
+    # ========================================================
+    # 3. SCORE
+    # ========================================================
+
+    score = 68
     confidence = 45
 
     reasons = []
     unknown = []
 
 
-    if title_matches:
+    if strong_title_matches:
 
-        score = 78
+        score = 80
         confidence = 55
 
         reasons.append(
-            "✓ IT-Kernleistung im Titel erkannt"
+            "✓ Relevante IT-Kernleistung im Titel erkannt"
+        )
+
+
+    elif override_matches:
+
+        score = 76
+        confidence = 50
+
+        reasons.append(
+            "✓ Relevante IT-Dienstleistung erkannt"
         )
 
 
@@ -1034,24 +1108,17 @@ def calculate_it_match(
         score = 70
 
         reasons.append(
-            "✓ IT-Leistung in der Beschreibung erkannt"
+            "✓ IT-Dienstleistung in der Beschreibung erkannt"
         )
 
 
     # ========================================================
-    # PROJEKTTYP
+    # Projekttyp
     # ========================================================
 
     preferred_projects = profile.get(
         "preferred_projects",
         []
-    )
-
-
-    combined_text = (
-        title_text
-        + " "
-        + description_text
     )
 
 
@@ -1068,20 +1135,26 @@ def calculate_it_match(
 
 
     # ========================================================
-    # REGION
+    # Region
     # ========================================================
 
     nationwide = (
         profile
         .get("location", {})
-        .get("nationwide", False)
+        .get(
+            "nationwide",
+            False
+        )
     )
 
 
     regions = (
         profile
         .get("location", {})
-        .get("regions", [])
+        .get(
+            "regions",
+            []
+        )
     )
 
 
@@ -1129,7 +1202,7 @@ def calculate_it_match(
 
 
     # ========================================================
-    # AUFTRAGSWERT
+    # Auftragswert
     # ========================================================
 
     value_profile = profile.get(
@@ -1209,25 +1282,19 @@ def calculate_it_match(
     )
 
 
-    confidence = min(
-        confidence,
-        95
-    )
-
-
-    score = max(
-        0,
-        min(
-            round(score),
-            100
-        )
-    )
-
-
     return {
         "eligible": True,
-        "score": score,
-        "confidence": confidence,
+        "score": max(
+            0,
+            min(
+                round(score),
+                100
+            )
+        ),
+        "confidence": min(
+            confidence,
+            95
+        ),
         "reasons": reasons,
         "unknown": unknown
     }
@@ -1268,10 +1335,7 @@ def send_telegram(
         result = response.json()
 
 
-        if result.get(
-            "ok"
-        ) is True:
-
+        if result.get("ok") is True:
             return True
 
 
@@ -1293,7 +1357,7 @@ def send_telegram(
 
 
 # ============================================================
-# GEDÄCHTNIS LADEN
+# GEDÄCHTNIS
 # ============================================================
 
 try:
@@ -1317,7 +1381,6 @@ try:
             posted_ids = set(
                 saved
             )
-
 
         else:
 
@@ -1349,13 +1412,10 @@ today_ted = berlin_now.strftime(
 )
 
 
-yesterday = (
+oe_day = (
     berlin_now
     - timedelta(days=1)
-)
-
-
-oe_day = yesterday.strftime(
+).strftime(
     "%Y-%m-%d"
 )
 
@@ -1381,11 +1441,9 @@ def process_notice(
         title
     )
 
-
     buyer = clean_text(
         buyer
     )
-
 
     number = clean_text(
         number
@@ -1436,12 +1494,17 @@ def process_notice(
 
 
     # ========================================================
-    # RICHTIGES PROFIL AUSWÄHLEN
+    # PROFIL AUSWÄHLEN
     # ========================================================
 
     if category == "bau":
 
         profile = BAU_PROFILE
+        chat_id = BAU_CHAT
+
+        category_name = (
+            "🏗 Bau & Infrastruktur"
+        )
 
         match = calculate_bau_match(
             title=title,
@@ -1451,16 +1514,15 @@ def process_notice(
             description=description
         )
 
-        chat_id = BAU_CHAT
-
-        category_name = (
-            "🏗 Bau & Infrastruktur"
-        )
-
 
     else:
 
         profile = IT_PROFILE
+        chat_id = IT_CHAT
+
+        category_name = (
+            "💻 IT, Software & Digitalisierung"
+        )
 
         match = calculate_it_match(
             title=title,
@@ -1470,16 +1532,6 @@ def process_notice(
             description=description
         )
 
-        chat_id = IT_CHAT
-
-        category_name = (
-            "💻 IT, Software & Digitalisierung"
-        )
-
-
-    # ========================================================
-    # NICHT PASSEND
-    # ========================================================
 
     if not match[
         "eligible"
@@ -1497,7 +1549,6 @@ def process_notice(
     score = match[
         "score"
     ]
-
 
     confidence = match[
         "confidence"
@@ -1519,16 +1570,11 @@ def process_notice(
         print(
             f"⏭ {category.upper()} "
             f"Match zu niedrig: "
-            f"{score}% | "
-            f"{title}"
+            f"{score}% | {title}"
         )
 
         return
 
-
-    # ========================================================
-    # EMPFEHLUNG
-    # ========================================================
 
     if (
         score >= 90
@@ -1554,10 +1600,6 @@ def process_notice(
             "🟡 INTERESSANT – DETAILS PRÜFEN"
         )
 
-
-    # ========================================================
-    # TEXT
-    # ========================================================
 
     reasons_text = "\n".join(
         match[
@@ -1602,11 +1644,9 @@ def process_notice(
         )
 
 
-    company_name = (
-        profile.get(
-            "company_name",
-            "Testunternehmen"
-        )
+    company_name = profile.get(
+        "company_name",
+        "Testunternehmen"
     )
 
 
@@ -1687,21 +1727,16 @@ def fetch_ted():
             f"{today_ted}",
 
         "fields": [
-
             "publication-number",
             "notice-title",
             "buyer-name",
             "publication-date",
-
             "main-classification-proc",
             "main-classification-lot",
-
             "place-of-performance-city-proc",
             "place-of-performance-city-lot",
-
             "place-of-performance-subdiv-proc",
             "place-of-performance-subdiv-lot",
-
             "estimated-value-proc",
             "estimated-value-lot"
         ],
@@ -1816,42 +1851,25 @@ def fetch_ted():
 
 
         process_notice(
-
-            title=
-                notice.get(
-                    "notice-title"
-                ),
-
-            buyer=
-                notice.get(
-                    "buyer-name"
-                ),
-
-            number=
-                number,
-
-            publication_date=
-                notice.get(
-                    "publication-date"
-                ),
-
-            cpv_codes=
-                cpv_codes,
-
-            location_text=
-                location_text,
-
-            contract_value=
-                contract_value,
-
+            title=notice.get(
+                "notice-title"
+            ),
+            buyer=notice.get(
+                "buyer-name"
+            ),
+            number=number,
+            publication_date=notice.get(
+                "publication-date"
+            ),
+            cpv_codes=cpv_codes,
+            location_text=location_text,
+            contract_value=contract_value,
             description="",
-
             link=(
                 "https://ted.europa.eu/"
                 "de/notice/-/detail/"
                 + number
             ),
-
             source="TED"
         )
 
@@ -1881,7 +1899,6 @@ def get_oe_buyer(
             )
         )
 
-
         if name:
             return name
 
@@ -1904,7 +1921,6 @@ def get_oe_buyer(
                     "name"
                 )
             )
-
 
             if name:
                 return name
@@ -1984,7 +2000,6 @@ def get_oe_location(
 
 
                 if value:
-
                     parts.append(
                         value
                     )
@@ -2130,7 +2145,6 @@ def fetch_oeffentliche_vergabe():
                     .group(1)
                 )
 
-
             else:
 
                 notice_id = (
@@ -2143,40 +2157,23 @@ def fetch_oeffentliche_vergabe():
 
 
             process_notice(
-
-                title=
-                    tender.get(
-                        "title"
-                    ),
-
-                buyer=
-                    get_oe_buyer(
-                        release
-                    ),
-
-                number=
-                    number,
-
-                publication_date=
-                    release.get(
-                        "date"
-                    ),
-
-                cpv_codes=
-                    cpv_codes,
-
-                location_text=
-                    location_text,
-
-                contract_value=
-                    contract_value,
-
-                description=
-                    tender.get(
-                        "description",
-                        ""
-                    ),
-
+                title=tender.get(
+                    "title"
+                ),
+                buyer=get_oe_buyer(
+                    release
+                ),
+                number=number,
+                publication_date=release.get(
+                    "date"
+                ),
+                cpv_codes=cpv_codes,
+                location_text=location_text,
+                contract_value=contract_value,
+                description=tender.get(
+                    "description",
+                    ""
+                ),
                 link=(
                     "https://"
                     "oeffentlichevergabe.de/"
@@ -2184,7 +2181,6 @@ def fetch_oeffentliche_vergabe():
                     "?noticeId="
                     + notice_id
                 ),
-
                 source=(
                     "ÖffentlicheVergabe.de"
                 )
@@ -2199,7 +2195,6 @@ try:
 
     fetch_ted()
 
-
 except Exception as error:
 
     print(
@@ -2211,7 +2206,6 @@ except Exception as error:
 try:
 
     fetch_oeffentliche_vergabe()
-
 
 except Exception as error:
 
@@ -2237,21 +2231,17 @@ with open(
 ) as file:
 
     json.dump(
-
         sorted(
             posted_ids
         ),
-
         file,
-
         ensure_ascii=False,
-
         indent=2
     )
 
 
 print(
-    "✅ Matching V4 abgeschlossen."
+    "✅ Matching V5 abgeschlossen."
 )
 
 
