@@ -1,0 +1,79 @@
+{
+  "company_id": "test_it_001",
+  "company_name": "Berlin Digital Solutions GmbH",
+  "industry": "IT / Softwareentwicklung / Digitalisierung",
+
+  "location": {
+    "city": "Berlin",
+    "regions": [
+      "Berlin",
+      "Brandenburg"
+    ],
+    "max_distance_km": 100,
+    "nationwide": true
+  },
+
+  "company": {
+    "employees": 20
+  },
+
+  "contract_value": {
+    "ideal_min_eur": 20000,
+    "ideal_max_eur": 400000,
+    "absolute_max_eur": 750000
+  },
+
+  "services": [
+    "Softwareentwicklung",
+    "Webentwicklung",
+    "Webanwendungen",
+    "Anwendungsentwicklung",
+    "App Entwicklung",
+    "Mobile Apps",
+    "IT-Dienstleistungen",
+    "IT-Beratung",
+    "Digitalisierung",
+    "Softwarepflege",
+    "Softwarewartung",
+    "Systemintegration",
+    "Schnittstellenentwicklung",
+    "API Entwicklung",
+    "Datenbanken",
+    "Cloud",
+    "IT-Infrastruktur",
+    "Systemmanagement"
+  ],
+
+  "preferred_projects": [
+    "Softwareentwicklung",
+    "Digitalisierung",
+    "Webportal",
+    "Onlineportal",
+    "Fachanwendung",
+    "App",
+    "Verwaltungssoftware",
+    "Softwarepflege",
+    "Weiterentwicklung",
+    "IT-System"
+  ],
+
+  "excluded_services": [
+    "Hardwarelieferung ohne Dienstleistung",
+    "Druckerlieferung",
+    "Mobilfunkverträge",
+    "reine Lizenzbeschaffung"
+  ],
+
+  "references": [
+    "Entwicklung von Webanwendungen",
+    "Softwareentwicklung",
+    "Digitalisierungsprojekte",
+    "IT-Systemintegration"
+  ],
+
+  "certifications": [],
+
+  "matching": {
+    "minimum_match_score": 70
+  }
+}
